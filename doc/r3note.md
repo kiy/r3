@@ -16,21 +16,30 @@ I have a project that consists mostly of numerical calculation, not that heavy-w
 A natural choice of the language for implementation would be ANSI C, but I don't find programming in C enjoyable.
 So I looked for a simple language and came across R3 while considering Charles Moor's ColorForth.
 
-### Pros
+### Is this a Forth?
 
-- **Pablo Hugo Reda**: helpful.
+R3 seems to be different from traditional Forths in many ways. It produces a turnkey that has no dictionary left as a part of the executable. Probably because of this, R3 has neither standard procedure to save and restore dictionary, nor interactive words to talk with the machine for introspection.
+
+### How is it different from ColorFORTH?
+
+According to Reda, 251012:
+
+>ColorForth is a set of good ideas to simplify Forth considering the CPU; you need to know the assembler to understand it in depth. I took those ideas oriented towards the programmer. The idea is to need no assembler. This is the main difference.
+>
+
+- **Pablo Hugo Reda**: *very* helpful.
 - **Curiosity**: R3 is inspired by ColorFORTH.
-- **Portabiliry**: The virtual machine (VM) is written in C++ and R3 itself.
-- **Fixed point**: 48.16 fixed point in place of floats.
-- **Typeless**: write less.
+- **Portabiliry**: The virtual machine (VM) is written in C++ and R3.
+- **Fixed point**: Fixed point 48.16 in place of floats.
+- **Typeless**: type less.
 
 ### Cons
 
-- **Documentation**: Scarce, scattered, and outdated. 
-- **Low numerical accuracy**: No floating point. *This is my biggest concern.*
+- **Poor documentation**: read the source code. 
+- **No floating point**: use fixed point.
 - **No REPL**: FreeForth2-style REPL should be possible.
-- **Case insensitive**: This may be an advantage.
-- **Windows libraries**: Tend not to work under Linux.
+- **No multiple line comment**: A filter to extract and execute code from `.md` file would help.
+- **Case insensitive**: perhaps a part of the philosophy.
 
 ## Hello world
 
@@ -56,24 +65,28 @@ on the screen.
 The first line in `hw.r3` includes (`^`) the file in which `.println`  is defined.
 The second line tells the VM to define (`:`) a nameless word that prints "Hello world!" as  a line (`.println`), execute it, and stop execution (`;`).
 
-- **`:f ...`** without a blank between `:` and `f` , with or without a semicolon `;` at the end, defines `f`.
+- **`:f ...`** without a blank between `:` and `f` , without a semicolon `;` at the end, defines `f` and continues.
 - **`:f ... ;`** without a blank between `:` and `f` , with a semicolon `;` at the end, defines `f` which returns to the caller after being called.
-- **`: f ;`** with a blank between colon `:` and `f` calls `f` and then stops execution.
+- **`: f ;`** with a blank between colon `:` and `f` , with a semicolon, calls `f` and then stops execution.
+
+## Tutorial game
+
+1. In `~/r3` type `r3`. You get a hierarchical menu, the top entry of which is `+net`. 
+2. Use arrow keys to go to `+r3vm`. Hit `Enter`. You have further menu within `+r3vm`.
+3. Go to `arena-bot.r3`. Hit `Enter`. A robot game appears.
+4. Follow the instructions.
 
 ## Dictionary
 
 The VM comes with a predefined dictionary. 
-Based on the primitives, new words are defined with sigils `:` and `#`.
+Based on the primitives therein, new words are defined with sigils `:` and `#`.
 The new words are added to the dictionary.
 
 Programming in r3 consists of defining new words from old words.
 The VM searches the dictionary from the latest to the oldest. 
 Words with the same name can be defined; the VM finds only the last defined word of the same name.
 
-The inclusion sigil `^` takes the indicated text file.
-The VM adds to the dictionary all words marked to be *export*ed: 
-**`::`** for code and **`##`** for data.
-Other words defined by single `:` or `#` are local to the file. 
+When the compilation is over, the dictionary is stripped.
 
 ### Example
 
@@ -89,8 +102,57 @@ pushes 5 (the value of variable 'side'), then calls square.
 
 At the end of the program, the stack will have the number 25.
 
-- The semicolon indicates not that the word definition ends there but that execution terminates there.
+- The semicolon signals not that the word definition ends there but that execution terminates there.
   A word can have multiple end points and even no end, continuing to the next defined word.
+
+## Scope
+
+The inclusion sigil **`^`** loads the indicated text file.
+A name is either **global**, or **local within a file**.
+
+- **Local** names are defined with `:` and `#`; they are valid only within the file the name is defined.
+
+- **Global** names are defined with `::` and `##`; they become available to all, after having read the file in which the name is defined.
+
+  ```forth
+  :Data ;  | and
+  :WORD ;  | are local whereas
+  ::Data ; | and
+  ::WORD ; | are global, exported to be valid outside this file
+  ```
+
+- **Collision** of names is resolved by making only the last defined name to be valid.
+
+  ```forth
+  #DATA ... ; | DATA becomes available
+  ... DATA may be used here ...
+  :WORD ... ; | WORD becomes available
+  ... WORD may be used here ...
+  :DATA ... ; | the new DATA becomes availe
+  ... the DATA used here means the new DATA ...
+  :WORD ... ; | the new WORD becomes availe
+  ... the WORD used here means the new WORD ...
+  
+  ```
+
+- **filename** appearing with `^` (include) as `^filename` are all relative to the location of the R3 executable.
+
+  For instance, if `r3x` is the executable in `~/r3`, then including a library file whose name is `filename.r3` in directory `~/r3/r3/lib/` would be `^r3/lib/filename.r3` with one `r3`.
+
+- **filename** spans the entire line, hence no comment with `|` is allowed within the line.
+  If the R3 executable is `dir0/r3executable` and `dir1` is under `dir0`, then
+
+  ```forth
+  ^dir1/dir2/filename.r3
+  ```
+
+  is valid whereas 
+
+  ```forth
+  ^dir1/dir2/filename.r3 | comment
+  ```
+
+  is not.
 
 ## Parsing
 
@@ -116,6 +178,8 @@ At the end of the program, the stack will have the number 25.
 | `%` | Binary | `%1010` | Binary number |
 | `'` | Address | `'wordname` | Address of a word |
 
+- `|` is the only way to comment. No multiple line comments.
+-  `:` and  `#` are for definitions local to the file in which they are defined; `::` and `##` make them global.
 - **Primitives** are words defined in the virtual machine.
 - `'` doesn't work for primitives since they have no addresses. 
 - Generally it is a bad idea to define a word the name of which consists of a single sigil, but this can be done with respect to some of the sigils.
@@ -149,18 +213,18 @@ At the end of the program, the stack will have the number 25.
 
 ```forth
 | Consistent names  
-:_4  pick4 ;
-:_3  pick3 ;
-:_2  pick2 ;
-:_1  over  ;  :pick1 over ;
-:_   dup   ;  :pick0 dup  ;
-:_-  drop  ;  :2_- 2drop ;  :3_- 2_- _- ;  :4_- 2_- 2_- ;
-:_1- nip ;
-:_2- rot drop ;
-:_3- >r rot drop r> ;
-:_4- >r >r rot drop r> r> ;
-:~   swap  ;  :2~  2swap ;
-:~!  swap ! ;
+::_4  pick4 ;
+::_3  pick3 ;
+::_2  pick2 ;
+::_1  over  ;  ::pick1 over ;
+::_   dup   ;  ::pick0 dup  ;
+::_-  drop  ;  ::2_- 2drop ;  ::3_- 2_- _- ;  ::4_- 2_- 2_- ;
+::_1- nip ;
+::_2- rot drop ;
+::_3- >r rot drop r> ;
+::_4- >r >r rot drop r> r> ;
+::~   swap  ;  ::2~  2swap ;
+::~!  swap ! ;
 ```
 
 - R3 does not check stack underflow.
@@ -242,31 +306,31 @@ When a word is called (a code definition, not data), the VM pushes onto the retu
 -2 1 >>   | pushes -1 since in binary 1111 ... 1111 1101 becomes 1111 ... 1111 1110
 -1 1 >>>  | pushes 9223372036854775807 since in binary 1111 ... 1111 1110 becomes 0111 ... 1111 1111
 ```
-
 ## Fixed Point
 
 Numbers with decimal points are recognized as 48.16 fixed point numbers: 48 bits for integer part, 16 bits for fractional part. 
-Avoids floating point complexity.
-Makes the VM easily portable to devices with no floating point. 
 
-With these numbers, addition and subtraction are the same as integers, but multiplication and division need words defined in `r3/lib/math.r3`:
+- Avoids floating point complexity.
+- Makes the VM easily portable to devices with no floating point. 
+
+Fixed point addition and subtraction are the same as integers, but multiplication and division need words defined in `r3/lib/math.r3`:
 
 | Word | Stack Effect | Description |
 |------|--------------|-------------|
-| `int.` | `f -- n=floor(f)` | fixed point to number |
+| `int.` | `f -- n=floor(f)` | fixed point to integer |
 | `cos` | `f -- cos(f)` |  |
 | `sin` | `f -- sin(f)` |  |
 | `tan` | `f -- tan(f)` |  |
-| `sqrt.` | `f -- sqrt(f)` | |
+| `sqrt.` | `f -- sqrt(f)` |  |
 | `exp.` | `f -- exp(f)` |  |
-| `ln.` | `f -- log_e(f)` | Low accuracy. As of 2025-10-06, `1.0 ln.` gives 0.0149. |
+| `ln.` | `f -- log_e(f)` |  |
 | `*.` | `f g -- f*g` | multiply |
 | `/.` | `f g -- f/g` | divide |
-| `root.` | `f g -- f**(1/g)` | 16.0 2.0 root.  gives  4.000 |
+| `root.` | `f g -- f**(1/g)` | `16.0 2.0 root.`  gives  4.000 |
 
 ## Registers
 
-R6 VM has two registers, `A` and `B` .
+The VM has two registers, `A` and `B` .
 X := A xor B
 
 | Size | Load | Push | Add | Fetch | Store | `@` and +size | `!` and +size | Name |
@@ -277,7 +341,8 @@ X := A xor B
 | 64 bits | `>X` | `X>` | `X+` | `X@` | `X!` | `X@+` | `X!+` | qword (default) |
 
 - Registers A and B are implemented with hardware registers, hence faster in execution.
-- When using a register, save and restore its original value to avoid destruction.
+- When using a register, save and restore its original value to avoid destruction, say by `a> >r ... r> >a`.
+- See Register Usage for more.
 
 ## Memory
 
@@ -328,7 +393,7 @@ The default **cell** size is 64 bits, but other sizes are supported. See the sec
 | `]` | `vec --` | End anonymous definition |
 | `EX` | `vec --` | Execute word by address |
 
-- `[ ... ]` is quotation without immediate execution.
+- `[ ... ]` is quotation without execution; you need an `ex` to run.
 
 ```forth
 :**2 dup * ;
@@ -391,7 +456,7 @@ These compare top-of-stack (TOS) with next-of-stack (NOS), *consuming only TOS*:
 - No result (True or False) is left on TOS.
 
 ```forth
-:=<? <=? ; | alias
+::=<? <=? ; | alias
 ```
 
 ## Conditional
@@ -425,7 +490,7 @@ ELSE is not provided suggesting factorization.
 A condition D
 ```
 
-### SWITCH or CASE
+### Multiple Selection
 
 **For sequential integers, use jump tables:**
 
@@ -565,6 +630,33 @@ For instance, the `:*table ... ;` part of the multiplication table example can a
 
 ## Memory
 
+```forth
+┌─────────────────────────────────────┐
+│  CODE MEMORY (Program)              │
+│  - Compiled word definitions        │
+│  - Cannot be modified at runtime    │
+└─────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│  STRING CONSTANTS (Code strings)    │
+│  - Strings defined in : definitions │
+│  - Read-only                        │
+└─────────────────────────────────────┘
+┌─────────────────────────────────────┐
+│  VARIABLE MEMORY (Data)             │
+│  - # variable definitions           │
+│  - Data strings                     │
+│  - Fixed-size buffers               │
+└─────────────────────────────────────┘
+         │
+         │ HERE points here
+         ▼
+┌─────────────────────────────────────┐
+│  FREE MEMORY (Dynamic)              │
+│  - Managed by MEM/HERE/MARK/EMPTY   │
+│  - Grows upward as allocated        │
+└─────────────────────────────────────┘
+```
+
 Variables define memory for data storage. Variables have a name, a memory address, and a value stored at that memory location. The actual address where each variable is located is obtained when executed - it's not necessary to know this address value, just use its name to represent it.
 
 ```forth
@@ -604,6 +696,18 @@ Using hex address $1000 as an example, this code reflects in memory as:
 ### Usage
 
 ```forth
+#ones 11 ;
+: ones . ; | 11 | like CONSTANT
+: 111 'ones ! ;
+: ones . ; | 111 | like VALUE
+#zot 0 1 2
+: 'zot 16 + @ . ; | 2
+#n123
+: [ 123 . ] 'n123 ! ;
+: n123 ex ; | 123 | like :n123 123 . ; : n123 ;
+```
+
+```forth
 :listshow
     'list
     @+ "%d " .print  | prints 3
@@ -619,26 +723,6 @@ listshow            | prints 3 1
 !+                  | 5 $1420
 !                   |
 listshow            | prints 6 5
-```
-
-### Buffer
-
-```forth
-| Memory buffer with pointer
-#buffer> 'buffer
-
-:+element | element --
-    buffer> !+ 'buffer> ! ;
-
-:traverse
-    'buffer ( buffer> <?
-        @+ "%d " .println
-    ) drop ;
-
-3 +element
-4 +element  
-5 +element
-traverse | prints 3 4 5
 ```
 
 ## Text
@@ -665,7 +749,7 @@ traverse | prints 3 4 5
 #dogs 4
 ```
 
-### Character-by-Character Processing
+### Characterwise Processing
 
 ```forth
 ^r3/editor/code-print.r3
@@ -675,7 +759,7 @@ traverse | prints 3 4 5
 		| waitEsc waits for ESCape
 ```
 
-### Formatted Output with `.print`
+### Formatted Output
 
 The `.print` word (^r3/editor/code-print.r3) processes text with % placeholders:
 
@@ -695,7 +779,8 @@ The `.print` word (^r3/editor/code-print.r3) processes text with % placeholders:
 ```forth
 | Shorthands
 ^r3/editor/code-print.r3
-:.pr .print ;  :. "%d " .print ;  :.. "%f " .print ;  :.ln .println ;
+::.wt .write ;  ::.pr .print ;  ::.ln .println ;
+::. "%d " .print ;  ::.. "%f " .print ;
 :_.  _ . ;  :@.  @ . ;  :@..  @ .. ;
 ```
 
@@ -706,9 +791,41 @@ Useful definitions for text handling are in libraries `r3/lib/str.r3` and `r3/li
 To count characters in text:
 
 ```forth
+^r3/lib/str.r3
 ::count | s1 -- s1 cnt
     0 over ( c@+ 1? | until 0 byte is found
         drop swap 1+ swap ) 2drop ;
+```
+### Buffer
+
+```forth
+| Memory buffer with pointer
+#buffer> 'buffer
+
+:+element | element --
+    buffer> !+ 'buffer> ! ;
+
+:traverse
+    'buffer ( buffer> <?
+        @+ "%d " .println
+    ) drop ;
+
+3 +element
+4 +element  
+5 +element
+traverse | prints 3 4 5
+```
+
+```forth:with-temp-buffer | size 'word --
+:with-temp-buffer | size 'word --
+	swap >r         | Save word address
+  MARK            | Mark memory
+  HERE swap       | Get buffer address
+  dup r> ex       | Execute word with buffer
+  EMPTY ;         | Release memory
+    
+| Usage:
+1024 '[ process-data-with-buffer ] with-temp-buffer 
 ```
 
 ## Register Usage
@@ -783,7 +900,46 @@ The VM starts with a console where only text can be displayed.
 ^r3/lib/console.r3
 : "hello world" .println ;
 ```
-### Advanced Operating System Connection
+## Terminal
+
+See `r3/lib/term.r3`.
+
+## File IO
+
+Defined in `r3/lib/posix/core.r3`, used with memory words  `r3/lib/mem.r3`. 251010 from Pablo.
+
+| Name | Stack effect |
+|----------|-----------------|
+| `save` | `'from count "filename" --` |
+| `append` | `'from count "filename" --` |
+| `load` | `'from "filename" -- 'to` |
+| `delete` | `"filename" --` |
+| `filexist` | `"file" -- 0=no` |
+
+- Load and write between file and memory.
+- `'from' is the memory side, usually `HERE`.
+
+To write the text `"Hello, and goodbye."` to the file `"text.txt":
+```forth
+^r3/lib/mem.r3
+: mark
+    "Hello, " ,s "and goodbye." ,s "text.txt" savemem
+  empty ;
+```
+where `savemem` counts the bytes and calls `save`.
+To load and show,
+```forth
+: here "text.txt" load | here updated
+  0 swap c!            | attach 0 at end
+  here .pr 
+```
+
+```forth
+^r3/lib/parse.r3
+: "123.456" str>fnro .f .write | 123.4559 
+```
+
+## Advanced Operating System Connection
 
 The OS connection is built through function calls to dynamic libraries. In Windows these are called .DLL (dynamic link libraries).
 
@@ -817,8 +973,6 @@ Words to call these functions take parameters from the stack according to parame
 | `SYS2` | `a b aa -- r` | Call function with 2 parameters |
 | ... | ... | ... |
 | `SYS10` | `a b c d e f g h i j aa -- r` | Call function with 10 parameters |
-
----
 
 ## Libraries
 
