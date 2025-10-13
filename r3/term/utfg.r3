@@ -1,4 +1,4 @@
-| Utg Graphics
+ | Utg Graphics
 | PHREDA 2025
 ^r3/lib/term.r3
 
@@ -95,7 +95,7 @@ $3C003C003C003C0 $143C7C3FE02AA8 $4007C02FC002C0 $10003D003F80380
 	$5b =? ( drop c@+ $5b <>? ( escape ; ) ) | [[
 	bigemit ;
 	
-| big font, colors with [BF 
+| big font zx, colors with [BF 
 ::.xwrite | str --
 	( c@+ 1? xchar ) 2drop ;
 
@@ -103,45 +103,14 @@ $3C003C003C003C0 $143C7C3FE02AA8 $4007C02FC002C0 $10003D003F80380
 	$5b =? ( drop c@+ $5b <>? ( escape ; ) ) | [[
 	bigemita ;
 
+| big font A, colors with [BF 
 ::.awrite | str --
 	( c@+ 1? achar ) 2drop ;
-	
+
+|---- Draw lines
 #vl ( $e2 $94 $82 $1b $5b $42 $1b $5b $44 0 ) | |v<
 #vd	( $e2 $95 $91 $1b $5b $42 $1b $5b $44 0 ) | ||v<
 
-|-----------------------------------
-::.boxl | x y w h --
-	2over .at
-	"┌" .write over 2 - "─" .rep "┐" .write
-	2swap 1+
-	2swap 2 -
-	( 1? 1- >r
-		pick2 pick2 .at "│" .write 
-		pick2 over + 1- .col "│" .write 
-		swap 1+ swap r> ) drop 
-	pick2 pick2 .at
-	"└" .write 2 - "─" .rep "┘" .write
-	2drop ;
-
-::.boxd | x y w h --
-	2over .at
-	"╔" .write over 2 - "═" .rep "╗" .write
-	2swap 1+
-	2swap 2 -
-	( 1? 1- >r
-		pick2 pick2 .at "║" .write 
-		pick2 over + 1- .col "║" .write 
-		swap 1+ swap r> ) drop 
-	pick2 pick2 .at
-	"╚" .write 2 - "═" .rep "╝" .write		
-	2drop ;
-	
-::.boxf
-	( 1? 1- >r
-		pick2 pick2 .at
-		dup .nsp swap 1+ swap 
-		r> ) 4drop ;
-	
 ::.vline | h --
 	vl .rep ;
 ::.hline | w --
@@ -151,72 +120,155 @@ $3C003C003C003C0 $143C7C3FE02AA8 $4007C02FC002C0 $10003D003F80380
 	vd .rep ;
 ::.hlined | w --
 	"═" .rep ;
-	
-|--- win
-#wx #wy #ww ##wh #wm
 
-::.inwin? | x y -- 0/-1
-	wy - $ffff and wh >? ( 2drop 0 ; ) drop | limit 0--$ffff
-	wx - $ffff and ww >? ( drop 0 ; ) drop
-	-1 ;
+::.boxl | x y w h --
+	3 <? ( 4drop ; ) swap
+	3 <? ( 4drop ; ) swap
+	2over .at
+	"┌" .write over 2 - "─" .rep "┐" .write
+	2swap 1+
+	2swap 2 -
+	( 1? 1- >r
+		pick2 pick2 .at "│" .write 
+		pick2 over + 1- .col "│" .write 
+		swap 1+ swap r> ) drop 
+	-rot .at
+	"└" .write 2 - "─" .rep "┘" .write ;
 
-::.win 'wh ! 'ww ! 'wy ! 'wx ! ;
-::.wmargin 'wm ! ;
-::.wm dup 'wx +! dup 'wy +! 2* neg dup 'wh +! 'ww +! ;
+::.boxd | x y w h --
+	3 <? ( 4drop ; ) swap
+	3 <? ( 4drop ; ) swap
+	2over .at
+	"╔" .write over 2 - "═" .rep "╗" .write
+	2swap 1+
+	2swap 2 -
+	( 1? 1- >r
+		pick2 pick2 .at "║" .write 
+		pick2 over + 1- .col "║" .write 
+		swap 1+ swap r> ) drop 
+	-rot .at
+	"╚" .write 2 - "═" .rep "╝" .write ;
+	
+::.boxf
+	3 <? ( 4drop ; ) swap
+	3 <? ( 4drop ; ) swap
+	( 1? 1- >r
+		pick2 pick2 .at
+		dup .nsp swap 1+ swap 
+		r> ) 4drop ;
+	
+	
+|--- utf align | result in HERE
+::lalign | cnt str -- 
+	mark
+	utf8count	| cnt str scount
+	pick2 >? ( drop over ) 
+	swap		| cnt scnt str
+	here pick2 utf8ncpy 'here !
+	- ,nsp 
+	,eol empty ;
+	
+::calign | cnt str --
+	mark
+	utf8count	| cnt str scount
+	pick2 >? ( drop over )	| cnt str scount
+	rot over -				| str scount resto
+	-rot 					| resto str scount
+	pick2 1+ 2/				| resto str scount ini
+	,nsp
+	swap here rot utf8ncpy 'here ! | resto
+	2/ ,nsp 
+	,eol empty ;
 
-::.wfill wx wy ww wh .boxf ;
-::.wborde wx wy ww wh .boxl ;
-::.wborded wx wy ww wh .boxd ;
+::ralign | cnt str --
+	mark
+	utf8count	| cnt str scount
+	pick2 >? ( drop over ) 
+	rot over - | str scount resto
+	,nsp
+	here swap utf8ncpy 'here ! 
+	,eol empty ;	
+	
+|---- format
+	
+::lwrite | w "str" --
+	lalign here .write ;
+::cwrite | w "str" --
+	calign here .write ;
+::rwrite | w "str" --
+	ralign here .write ;
 
-:x0 wx ;
-:x1 wx 1+ ;
-:x2 wx pick2 - ww + ;
-:x3 wx pick2 - 1- ww + ;
-:x4 wx ww pick3 - 2/ + ;
-:x5 wx wm + ;
-:x6 wx pick2 - wm - ww + ;
-#xpl x0 x1 x2 x3 x4 x5 x6 x0
-:y0 wy ;
-:y1 wy 1+ ;
-:y2 wy wh + 1- ;
-:y3 wy 2 - wh + ;
-:y4 wy wh 2/ + ;
-:y5 wy wm + ;
-:y6 wy wm - wh + 1- ;
-#ypl y0 y1 y2 y3 y4 y5 y6 y0
+|---- Text
+#strsplit
+#strsplit>
+#lines
+#cntlines
 
-|$44 center
-:place | count place -- x y
-	dup $7 and 3 << 'xpl + @ ex
-	swap 4 >> $7 and 3 << 'ypl + @ ex
-	rot drop ;
+:emit0
+	13 =? ( drop dup c@ 10 =? ( swap 1+ swap ) drop 0 ; )
+	10 =? ( drop dup c@ 13 =? ( swap 1+ swap ) drop 0 ; )
+	$3b =? ( 0 nip ) ;
 	
-::.wtitle | place "" --
-	utf8count | place "" count
-	rot place .at .write ;
-	
-::.wlinef | y --
-	wx swap wy + .at "├" .write ww 2 - "─" .rep "┤" .write ;
-	
-::.wline | y --
-	wx 1+ swap wy + .at ww 2 - "─" .rep ;
-	
-|--- Element	
-#wsx #wsy	
+:<<sp | stro str -- str'
+	swap over
+	( over <? ( 2drop ; ) 
+		dup c@ $ff and 32 >? 
+		drop 1- ) drop nip nip ;
 
-::tuat 'wsy ! 'wsx ! ;
+:testw | str -- str
+	pick4 >r utf8count 
+	r> swap >? ( drop ; ) | str count
+	over a!+ | newline
+	utf8bytes | str bytes
+	over + <<sp
+	0 swap c!+
+	testw ;
+	
+:splitlines | str --
+	here dup >a 'strsplit ! 
+	( c@+ 1? emit0 ca!+ ) nip | put 0 in ; or cr
+	a> 'strsplit> !
+	ca!+ 
+	a> 'lines !
+	strsplit ( strsplit> <?
+		testw dup a!+ >>0
+		) drop
+	0 a!+
+	a> dup 'here ! 
+	lines - 3 >> 'cntlines !
+	;	
 
-::.wstart	
-	wx wm + 'wsx ! 
-	wy wm + 'wsy !
-	;
+:vtop	drop ;
+:vcen	cntlines - 2/ + ;
+:vbot	cntlines - ;
+
+#halign 'calign
+#valign 'vcen
+
+::xalign | $VH --
+	dup $3 and
+	0 =? ( 'lalign 'halign !  )
+	1 =? ( 'calign 'halign ! )
+	2 =? ( 'ralign 'halign ! )
+	drop
+	4 >> $3 and
+	0 =? ( 'vtop 'valign ! )
+	1 =? ( 'vcen 'valign ! )
+	2 =? ( 'vbot 'valign ! )
+	drop ;
+
+::xwrite | w "str" --
+	halign ex here .write ;
 	
-::.wtext | "" --
-	wsx wm + wsy .at
-	.write
-	1 'wsy +! ;
-::.wat@ | -- x y 
-	wsx wm + wsy ;
-	
-|::.wltext ;
-|::.wtext ;
+::xText | w h x y "" --
+	mark ab[ 
+	splitlines 
+	rot 	| w x y h
+	valign ex
+	lines >a ( 
+		2dup .at
+		a@+ 1? pick3 swap xwrite 
+		1+
+		) drop
+	3drop
+	]ba empty ;

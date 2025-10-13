@@ -7,13 +7,18 @@
 ^r3/lib/parse.r3
 
 | KEYCODES 
-::[ESC] $1b ; ::[ENTER] $d ; ::[BACK] $7f ;
+::[ESC] $1b ; 
+::[ENTER] 
+|WIN| $d 
+|LIN| $a
+	; 
+::[BACK] $7f ;
 ::[TAB] $9 ; ::[DEL] $7E335B1B ; ::[INS] $7E325B1B ;
 ::[UP] $415b1b ; ::[DN] $425b1b ; 
 ::[RI] $435B1B ; ::[LE] $445B1B ;
 ::[PGUP] $7e355b1b ; ::[PGDN] $7e365b1b ; 
 ::[HOME] $485b1b ; ::[END] $465b1b ;
-::[SHIFT+TAB] $95a5b1B ;
+::[SHIFT+TAB] $5a5b1b ;
 ::[SHIFT+DEL] $7e323b335b1B ;
 ::[SHIFT+INS] $7E323b325B1B ;
 ::[SHIFT+UP] $41323b315b1b ; ::[SHIFT+DN] $42323b315b1b ;
@@ -30,26 +35,28 @@
 |------- Output Buffer System -------
 #outbuf | output buffer
 #outbuf> 'outbuf | Current position in buffer
-##pad 				| pd is end of outbuf
+#endbuf |  end of outbuf
 
+::.cl outbuf 'outbuf> ! ;
+	
 ::.flush | -- | Write buffer to stdout
     outbuf> outbuf - 0? ( drop ; )
 	outbuf swap type
     outbuf 'outbuf> ! ;
 
 ::.type | str cnt -- | Add to buffer
-    pad outbuf> - >? ( .flush ) 
+    endbuf outbuf> - >? ( .flush ) 
 	outbuf> rot pick2 cmove
     'outbuf> +! ;
 ::.emit | char --
-	outbuf> pad =? ( .flush outbuf nip ) c!+ 'outbuf> ! ;
+	outbuf> endbuf =? ( .flush outbuf nip ) c!+ 'outbuf> ! ;
 
 ::.cr 10 .emit 13 .emit ;
 ::.sp 32 .emit ;
 ::.nsp | n -- ;..
 	32 swap 
 ::.nch | char n -- ; WARNIG not multibyte
-	pad outbuf> -  >? ( .flush )
+	endbuf outbuf> -  >? ( .flush )
 	outbuf> rot pick2 cfill | dvc
 	'outbuf> +! ;
 
@@ -64,6 +71,7 @@
 ::.rep | cnt  "car" -- 
 	count rot ( 1? 1- pick2 pick2 .type ) 3drop ;
 
+|--- automatic flush version
 ::.fwrite .write .flush ;
 ::.fprint .print .flush ;
 ::.fprintln .println .flush ;
@@ -87,15 +95,18 @@
 ::.restorec "u" .[w ; | restore cursor position
 
 |------- Cursor Shapes -------
-::.ovec "0 q" .[w ; | default cursor
-::.insc "5 q" .[w ; | blinking bar
-::.blockc "2 q" .[w ; | steady block
-::.underc "4 q" .[w ; | steady underscore
+::.ovec "0q" .[w ; | default cursor
+::.insc "5q" .[w ; | blinking bar
+::.blockc "2q" .[w ; | steady block
+::.underc "4q" .[w ; | steady underscore
 
 |------- Screen Buffer Control -------
 ::.alsb "?1049h" .[w ; | alternate screen buffer
 ::.masb "?1049l" .[w ; | main screen buffer
 
+::.scrolloff | rows --
+	"1;%dr" .[p ;
+::.scrollon	"r" .[w ;
 |------- Foreground Colors -------
 ::.Black "30m" .[w ;
 ::.Red "31m" .[w ;
@@ -152,33 +163,16 @@
 ::.Hidden "8m" .[w ;
 ::.Strike "9m" .[w ;
 ::.Reset "0m" .[w ;
-	
-|------- Line Input -------
-
-:.readln | --
-    pad ( inkey 1? swap c!+ ) swap c! ;
-
-::.input | -- | read line to pad
-    pad 
-    ( getch $D <>? | wait for ENTER key
-        0? ( drop ; )
-        8 =? ( swap 
-            1- pad <? ( 2drop pad ; )
-            swap .emit "1P" .[w ; )
-        dup .emit
-        swap c!+ ) drop
-    0 swap c! ;
-
-::.inputn | -- n | read number
-    .input pad str>nro nip ;
 
 ::waitesc | -- | wait for ESC key
-    ( getch [esc] <>? drop ) drop ;
+    ( getch [esc] <>? drop 10 ms ) drop ;
+
+::waitkey | -- | wait any key
+    ( getch 0? drop 10 ms ) drop ;
 	
 : |||||||||||||||||||||||||||||
 	here 
-	dup 'outbuf ! $ffff +
-	dup 'pad ! 1024 + | pad is end of buffer
-	'here !
-	outbuf 'outbuf> !
-;
+	dup 'outbuf ! dup 'outbuf> !
+	$ffff +	| 64kb flush buffer (big!!)
+	dup 'endbuf ! 'here !
+	;

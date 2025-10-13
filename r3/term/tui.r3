@@ -1,38 +1,115 @@
 ^r3/lib/term.r3
 ^./utfg.r3
 
-#.exit 0 
-::exit 1 '.exit ! ;
+|--- Layout
+##fx ##fy ##fw ##fh 
 
+::flin? | x y -- 0/-1
+	fy - $ffff and fh >? ( 2drop 0 ; ) drop | limit 0--$ffff
+	fx - $ffff and fw >? ( drop 0 ; ) drop
+	-1 ;
+
+#flstack * 64 | 8 niveles
+#flstack> 'flstack
+
+:xywh>fl | x y w h -- v
+	$ffff and 16 <<
+	swap $ffff and or 16 <<
+	swap $ffff and or 16 <<
+	swap $ffff and or ; | hhwwyyxx
+	
+|:fl>xywh | v -- x y w h 
+|	dup $ffff and swap
+|	dup 16 >> $ffff and swap
+|	dup 32 >> $ffff and swap
+|	48 >> $ffff and ;
+|::flx@ | -- x y w h
+|	flstack> 8 - @ fl>xywh ;
+	
+:fl>now | v --
+	w@+ 'fx ! w@+ 'fy ! w@+ 'fw ! w@ 'fh ! ;
+	
+::flxvalid? | -- 0= not valid
+	fw 1 <? ( drop 0 ; ) drop 
+	fh 1 <? ( drop 0 ; ) drop 
+	-1 ;
+	
+::flx! | x y w h --
+	2over 'fy ! 'fx !
+	2dup 'fh ! 'fw ! 
+	xywh>fl 'flstack !+ 'flstack> ! ;
+	
+::flx | --
+	1 1 cols rows flx! ;
+	
+:flx+! flstack> 8 - dup w@ rot + clamp0 swap w! ;
+:fly+! flstack> 8 - 2 + dup w@ rot + clamp0 swap w! ;
+:flw+! flstack> 8 - 4 + dup w@ rot + clamp0 swap w! ;
+:flh+! flstack> 8 - 6 + dup w@ rot + clamp0 swap w! ;
+
+::flxpush	
+	fh fw fy fx flstack> w!+ w!+ w!+ w!+ 'flstack> ! ;
+::flxpop	
+	-8 'flstack> +! flstack> fl>now ;
+::flxFill 
+	flstack> 8 - fl>now ;
+
+| N=^ S=v E=> O=<
+| - is full minus the number
+::flxN | lineas --
+	-? ( fh + )
+	flxFill dup fly+! dup neg flh+!	'fh ! ;
+::flxS | lineas --
+	-? ( fh + )
+	flxFill dup neg flh+! fh fy + over - 'fy ! 'fh ! ;
+::flxE | cols --
+	-? ( fw + )
+	flxFill dup neg flw+! fw fx + over - 'fx ! 'fw ! ;
+::flxO | cols --
+	-? ( fw + )
+	flxFill dup flx+! dup neg flw+! 'fw ! ;
+	
+::fw% fw 16 *>> ;
+::fh% fh 16 *>> ;
+
+::flpad | x y --
+	dup 'fy +! 2* neg 'fh +!
+	dup 'fx +! 2* neg 'fw +! ;
+	
+::flcr
+	.cr fx .col ;
+	
+|---- Events
 #vecdraw
-
-#wflag	| widget flag
-#rflag	| render flag
 
 #id		| now
 #idh	| hot
 #ida 	| activa
 #idf	| id foco
 #idfa 
-
 #wid	| panel now
 #wida	| panel activa
 
+#rflag	| exit|render|change
 ##uikey	| tecla
 
-#info "ok" * 256
+:tuireset
+	-1 'ida ! -1 'idfa !
+	0 'wid ! 0 'rflag !
+	;
+
+::exit	rflag $4 or 'rflag ! ; 
+
+:tucl	rflag $2 nand 'rflag ! ;	| exec action is for every widget
+:tuX!	rflag $2 or 'rflag ! ;	| exec action need (click or enter)
+::tuX?	rflag $2 and ;			| ask for acion
+
+:tuR!	rflag $8 or 'rflag ! ;	| redraw again, some changes
+:tuTAB	rflag $10 or 'rflag ! ;	| no TAB for change focus
 
 ::.tdebug
 	wida idf ida id "id:%d ida:%d idf:%d wida:%d " .print
-|	uikey ">>%h<<" .print
-|	'info .write
-	;
-
-:tuireset
-	-1 'ida !
-	-1 'idfa !
-	0 'idf !
-	0 'wid !
+	rflag "%d " .print
 	;
 
 | 0 = normal
@@ -44,21 +121,24 @@
 | 6 = click
 
 ::tuiw | -- flag
-	1 'id +! 
+	1 'id +! tucl
 	ida 
 	-1 =? ( drop | !active
-		evtmxy .inwin? 0? ( ; ) drop	| out->0
+		evtmxy flin? 0? ( ; ) drop	| out->0
 		evtmb 0? ( drop 1 ; ) drop		| over->1
 		id dup 'ida ! 'idf !
 		2 ; )	| in->2
 	id =? ( drop | =active
-		evtmxy .inwin? 0? ( drop
+		evtmxy flin? 0? ( drop
 			evtmb 0? ( drop -1 'ida ! 5 ; ) drop	| out->5
 			4 ;	) drop						| active outside->4
 		evtmb 0? ( drop -1 'ida ! 6 ; ) drop		| click->6
 		3 ; ) 	 							| active->3
 	drop 0 ;
 
+::tuRefocus
+	-1 'idfa ! ;
+	
 ::tuif | -- flag
 	id 
 	idf <>? ( drop 0 ; )
@@ -67,6 +147,7 @@
 	drop 2 ; | stay
 	
 ::tui
+	flx
 	idf 
 	-? ( id 'idf ! )
 	id >? ( 0 'idf ! ) 
@@ -76,21 +157,30 @@
 	0 'wid ! ;
 
 |-------------- EVENT
+:Focus>>
+	rflag $10 and? ( drop ; ) drop
+	1 'idf +! tuR! ;
+	
+:Focus<<
+	rflag $10 and? ( drop ; ) drop
+	-1 'idf +! tuR! ;
+	
 :hkey
 	evtkey
 	[esc] =? ( exit ) 
-	[tab] =? ( 1 'idf +! ) | cambia id y luego wid
-	[shift+tab] =? ( -1 'idf +! ) | cambia id y luego wid
+	[tab] =? ( focus>> ) | cambia id y luego wid
+	[shift+tab] =? ( focus<< ) | cambia id y luego wid
 	'uikey ! ;
 	
 |:hmouse evtmb 1? ( evtmxy .at "." .fwrite ) drop ;
+:exvector
+	.hidec tui vecdraw ex ;
 	
-:tredraw
-	.hidec
-	0 'rflag !
-	vecdraw ex 
+:tuiredraw
+	exvector
 	rflag
-	1 and? ( .restorec .showc )
+	$8 and? ( 0 'uikey ! .cl exvector ) | redraw
+	$1 and? ( .restorec .showc )	| with cursor
 	drop
 	.flush ;
 	
@@ -98,25 +188,66 @@
 	dup .onresize
 	'vecdraw !
 	tuireset
-	tredraw
-	( .exit 0? drop
-		0 'uikey !
-		inevt	
+	tuiredraw
+	( rflag $4 nand? drop
+		0 'uikey ! 0 'rflag !
+		inevt
 		1 =? ( hkey ) |	2 =? ( hmouse )
-		1? ( tredraw ) | ?? animation
+		1? ( tuiredraw ) | ?? animation
 		drop
 		10 ms
 		) drop 
 	tuireset ;
 
+
 |---------------------	
-::tuWin | x y w h --
-	.win
-	wid wida =? ( .wborde ) 1+ 'wid !
-	;
+::.wfill fx fy fw fh .boxf ;
+::.wborde fx fy fw fh .boxl ;
+::.wborded fx fy fw fh .boxd ;
+
+:x0 fx ;
+:x1 fx 1+ ;
+:x2 fx pick2 - fw + ;
+:x3 fx pick2 - 1- fw + ;
+:x4 fx fw pick3 - 2/ + ;
+:x5 fx fw + ;
+:x6 fx pick2 - fw - fw + ;
+#xpl x0 x1 x2 x3 x4 x5 x6 x0
+:y0 fy ;
+:y1 fy 1+ ;
+:y2 fy fh + 1- ;
+:y3 fy 2 - fh + ;
+:y4 fy fh 2/ + ;
+:y5 fy fw + ;
+:y6 fy fw - fh + 1- ;
+#ypl y0 y1 y2 y3 y4 y5 y6 y0
+
+|$44 center
+:place | count place -- x y
+	dup $7 and 3 << 'xpl + @ ex
+	swap 4 >> $7 and 3 << 'ypl + @ ex
+	rot drop ;
+
+::.wtitle | place "" --
+	utf8count | place "" count
+	rot place .at .write ;
+	
+::tuWin | --
+	wid wida =? ( .wborde ) 1+ 'wid ! ;
+	
+|--- Button	
+:kbBtn | 'ev "" -- 'ev ""
+	tuif 1 <? ( drop ; ) drop
+	uikey 0? ( drop ; )	
+	[enter] =? ( drop >r dup >r ex r> r> ; )
+	drop ;
 	
 ::tuBtn | 'ev "" --
-	.wtext
+	tuiw 
+	dup .bc
+	drop
+	kbBtn
+	>r fw fh fx fy r> xText
 	drop
 	;
 	
@@ -163,8 +294,8 @@
 	[le] =? ( kizq ) [ri] =? ( kder )
 	[back] =? ( kback ) [del] =? ( kdel )
 	[home] =? ( padi> 'pad> ! ) [end] =? ( padf> 'pad> ! )
-|	<tab> =? ( nextfoco ) <ret> =? ( nextfoco )
-|	<dn> =? ( nextfoco ) <up> =? ( prevfoco )
+	[dn] =? ( focus>> ) [up] =? ( focus<< )
+	[enter] =? ( tuX! )
 	drop ;	
 
 :inInput | 'var max -- 'var max
@@ -176,25 +307,26 @@
 
 :tuInputfoco
 	tuif 0? ( drop ; )
-	1 =? ( drop inInput ; ) drop
+	1 =? ( drop inInput dup ) drop
 	kbInputLine 
-	.wat@ swap 
+	fx fy swap 
 	pad> padi> - + | !! falta utf
 	swap .at .savec | cursor
-	1 'rflag !		| activate cursor
+	rflag $1 or 'rflag !		| activate cursor
 	;
 	
 ::tuInputLine | 'buff max --
 	tuiw drop
 	tuInputfoco
-	drop .wtext
+	drop
+	fx fy .at	
+	fw 2 <? ( 2drop ; ) 
+	swap lwrite
 	;
 	
 |--------------------------------	
-|--------------------------------	
 |----- list mem (intern)
-#cntlist
-#indlist
+#cntlist #indlist
 
 :makeindx | 'adr -- 
 	here dup 'indlist ! >a
@@ -206,25 +338,39 @@
 ::uiNindx | n -- str
 	cntlist >=? ( drop "" ; )
 	3 << indlist + @ ;
+|--------------------------------	
+:clicklist | 'var h -- 'var h
+	pick2 evtmxy nip fy - over 8 + @ + cntlist min swap ! tuX! ;
 	
 |----- LIST
 | #vlist 0 0 
 
-:focList | --
+:focList | 'var h --
 	tuif 0? ( drop ; ) drop
 	uikey 0? ( drop ; )	
-	[up] =? ( pick2 dup @ 1- clamp0 swap ! )
-	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! )
+	[up] =? ( pick2 dup @ 1- clamp0 swap ! tuX! )
+	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! tuX! )
 	drop ;	
+
+:mouList | 'var h --
+	tuiw	| mouse
+	6 =? ( clicklist )
+	drop ;
 
 :ilist | 'var max n  -- 'var max n
 	pick2 8 + @ over +
 	pick3 @ =? ( .rever )
-	uiNindx .wtext .reset ;
+	uiNindx 
+	fx .col
+	fw swap xwrite .cr
+	.reset
+	;
 
-::tuList | 'var cntlines list --
+::tuList | 'var list --
+	fx fy .at
 	mark makeindx
-	tuiw drop
+	fh
+	mouList
 	focList
 	0 ( over <? ilist 1+ ) drop
 |	cscroll
@@ -258,15 +404,21 @@
 
 :kbclick	
 	pick2 @ 3 << indlist + @ 
-	dup c@ $80 xor swap c! ;
+	dup c@ $80 xor swap c! 
+	tuX! tuR! ;
 	
-:focTree | --
+:focTree | 'var h --
 	tuif 0? ( drop ; ) drop
 	uikey 0? ( drop ; )	
-	[up] =? ( pick2 dup @ 1- clamp0 swap ! )
-	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! )
+	[up] =? ( pick2 dup @ 1- clamp0 swap ! tuX! )
+	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! tuX! )
 	[enter] =? ( kbclick ) 
 	drop ;	
+	
+:mouTree | 'var h --
+	tuiw	| mouse
+	6 =? ( clicklist kbclick )
+	drop ;
 
 #foldicon "▸" "▾"
 :,iicon | n -- 
@@ -277,102 +429,17 @@
 	pick2 8 + @ over +
 	pick3 @ =? ( .rever )
 	uiNindx c@+ 0? ( 2drop ; )
-	dup $1f and 2* .wmargin
-	mark ,iicon ,s ,eol empty
-	here .wtext .reset ;
+	fx .col
+	mark dup $1f and 2* ,nsp ,iicon ,s ,eol empty
+	fw here xwrite .cr .reset ;
 	
-::tuTree | 'var cntlines list --
+::tuTree | 'var list --
+	fx fy .at
 	mark maketree
-	tuiw drop
-	focTree	
+	fh
+	mouTree
+	focTree	| focus
 	0 ( over <? itree 1+ ) drop
 |	cscroll
 	2drop
 	empty ;	
-
-|--------------------------------	
-|--------------------------------	
-##uiDirs
-##uiFiles
-
-#basepath * 1024
-
-#stckhdd>
-#l1 0 #l2 0 
-
-|------ folders for tree
-:backdir | -- ;  2 '/' !!
-	0 'l1 !
-	'basepath ( c@+ 1? 
-		$2f =? ( l1 'l2 ! over 'l1 ! )
-		drop ) 2drop
-	0 l2 1? ( c! ; ) 2drop ;	
-
-:pushdd | --
-	stckhdd> findata 
-|WIN|	520 
-|LIN|	8
-	cmove |dsc
-|WIN|	520 
-|LIN|	8
-	'stckhdd> +! ;
-	
-:pophdd
-|WIN|	-520 
-|LIN|	-8
-	'stckhdd> +!
-	findata stckhdd>
-|WIN|	520 
-|LIN|	8
-	cmove ;
-
-:dir.?
-	dup fname 
-	dup "." = 1? ( 2drop 0 ; ) drop
-	dup ".." = 1? ( 2drop 0 ; ) drop
-	drop
-	dup fdir ;
-	
-:scand | level "" --
-	'basepath strcat "/" 'basepath strcat
-	'basepath 
-|WIN| "%s/*" sprint
-	ffirst 0? ( drop ; ) |drop fnext drop 
-	( dir.? 1? (
-		pushdd
-|		pick2 64 + .emit over fname .write .cr
-		pick2 64 + ,c over fname ,s 0 ,c
-		pick2 1+ pick2 fname scand
-		pophdd
-		) 2drop
-	fnext 1? ) 2drop 	
-	backdir ;
-
-	
-|----- Files
-:+file | f --
-	dup FDIR 1? ( 2drop ; ) drop | nodirs
-	dup FNAME
-	dup ".." = 1? ( 3drop ; ) drop
-	dup "." = 1? ( 3drop ; ) drop
-	,s "|" ,s
-	dup FSIZEF 12 >> ,d " Kb|e" ,s
-|	dup FDIR ,d
-	|dup FWRITEDT dt>64 ,64>dtf 
-	drop 
-	0 ,c ;
-	
-::scanfiles | filename -- | file2list
-	mark uiFiles 'here !
-|WIN|	"%s//*" sprint
-	ffirst ( +file fnext 1? ) drop 0 , 
-	empty ;
-	
-::scandir | "" --
-	here 'uiDirs !
-	0 'basepath !
-	here $ffff + 'stckhdd> ! 
-	0 swap scand 0 , 
-	here 'uiFiles !
-	$ffff + 'here +!
-	;

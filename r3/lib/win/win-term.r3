@@ -2,7 +2,7 @@
 | PHREDA 2021 - Updated 2025
 
 ^r3/lib/mem.r3
-^r3/lib/str.r3
+^r3/lib/parse.r3
 
 |-------terminal Handles -------
 ##stdin 
@@ -13,6 +13,11 @@
 ::type | str cnt --
     stdout -rot 0 0 WriteFile drop ;
 
+##rows ##cols
+#eventBuffer * 32
+#ne | number of events
+#prevrc 0
+
 |------- Console Information -------
 | CONSOLE_SCREEN_BUFFER_INFO structure:
 |   COORD      dwSize; (16.16)
@@ -20,43 +25,40 @@
 |   WORD       wAttributes;16
 |   SMALL_RECT srWindow;16.16.16.16
 |   COORD      dwMaximumWindowSize;16.16
-
-#consoleinfo 0 0 0
-##rows ##cols
-#prevrc 0
-
-::.getterminfo | --
-    stdout 'consoleinfo GetConsoleScreenBufferInfo drop 
-    'consoleinfo 10 + @
+:getterminfo | --
+    stdout 'eventBuffer GetConsoleScreenBufferInfo drop 
+    'eventBuffer 10 + @
     dup 32 >> $ffff and over $ffff and - 'cols !
     dup 48 >> $ffff and swap 16 >> $ffff and - 'rows ! ;
 
-:.getrc rows 16 << cols or ;
+|#c1 ( $1b ) "[9999;9999H"
+|#c2 ( $1b ) "[6n"
+|:getterminfo2	| read size terminal with esc sequense
+|	'c1 count type 
+|	'c2 count type
+|	stdin 'eventBuffer 32 'ne 0 ReadConsole
+|	'eventBuffer 2 + 
+|    getnro 'rows ! 1+ | Skip ;
+|    getnro 'cols ! 
+|	drop ;
+
+:getrc rows 16 << cols or ;
 
 |------- Resize Detection -------
 #on-resize 0 | callback address
 
-:.checksize | --
-	on-resize 0? ( drop ; ) 
-	.getterminfo
-	.getrc prevrc =? ( 2drop ; ) 'prevrc !
-    ex ; 
-
 ::.onresize | 'callback --
     'on-resize ! ;
 
-|------- Keyboard Input -------
-| Windows Console Input Format
-| Key code format: $ccp0ss
-|   ss = scancode
-|   cc0000 = character code
-|   p000 = press(0) release(1)
-| Example: $1B1001 = ESC key release
+:eventsize
+	'eventBuffer 4 + w@+ 'cols ! w@ 'rows ! 
+	getrc prevrc =? ( drop ; ) 'prevrc !
+	on-resize 0? ( drop ; ) ex ; 
 
+|------- Keyboard Input -------
 | INPUT_RECORD structure:
 |   WORD  EventType; (1=key, 2=mouse, 4=size, 8=menu, 10=focus)
 |   union of event data
-
 | KEY_EVENT_RECORD:
 |   BOOL  bKeyDown;        | WORD |2
 |   WORD  wRepeatCount;    | 4
@@ -64,45 +66,48 @@
 |   WORD  wVirtualScanCode;| 12
 |   WCHAR/CHAR UnicodeChar;| 14
 |   DWORD dwControlKeyState;
-
-#eventBuffer 0 0 0 0 0
-#ne | number of events
-#nr | number read
-
 ::evtkey | -- key
 	'eventBuffer dup 4 + c@ 0? ( nip ; ) drop
 	14 + c@ $1b <>? ( ; ) 
-	stdin 'eventBuffer 1 'nr PeekConsoleInput
-	nr 0? ( drop ; ) drop
-	56 <<
-	( stdin 'eventBuffer 1 'nr ReadConsoleInput
-		8 >> 'eventBuffer 14 + c@ 1?
-		56 << or ) drop
-	( $ff nand? 8 >> ) 
-	;
+	56 << ( 8 >> 
+	    stdin 'ne GetNumberOfConsoleInputEvents 
+		ne 1? drop
+		stdin 'eventBuffer 1 'ne ReadConsoleInput
+		'eventBuffer 14 + c@ 1? 56 << or ) drop
+	( $ff nand? 8 >> ) ;
+
+:getEvent
+	stdin 'ne GetNumberOfConsoleInputEvents 
+    ne 0? ( ; ) drop
+    stdin 'eventBuffer 1 'ne ReadConsoleInput
+    eventBuffer $ffff and ;
 	
-::getch | -- key | wait for key
-    ( stdin 'eventBuffer 1 'nr ReadConsoleInput
-      eventBuffer $ffff and 1 <>? 
-		4 =? ( .checksize )
-		drop ) drop
-	evtkey ;
+::inevt | -- type | check for event (no wait)
+	getEvent
+    4 =? ( ( getEvent 2 >? drop ) drop eventsize ; ) | Handle resize event
+	2 >? ( drop inevt ; ) ;
+
+::getevt | -- type | wait for any event
+	( inevt 0? drop 10 ms ) ;
 
 ::inkey | -- key | 0 if no key pressed
-    stdin 'ne GetNumberOfConsoleInputEvents 
-    ne 0? ( ; ) drop
-    stdin 'eventBuffer 1 'nr ReadConsoleInput 
-    eventBuffer $ff and
-    1 =? ( drop evtkey ; )
-    4 =? ( drop .checksize 0 ; ) | WINDOW_BUFFER_SIZE_EVENT
-    drop 0 ;
-
+	inevt 1 =? ( drop evtkey ; ) drop 0 ;
+	
+::getch | -- key | wait for key
+    ( inkey 0? drop 10 ms ) ;
+	
 |------- Extended Event Handling -------
 | MOUSE_EVENT_RECORD:
 |   COORD dwMousePosition;  | 2
 |   DWORD dwButtonState;    | 6
 |   DWORD dwControlKeyState;| 10
 |   DWORD dwEventFlags;     | 14
+
+| Mouse event flags:
+| MOUSE_MOVED 0x0001
+| DOUBLE_CLICK 0x0002    
+| MOUSE_WHEELED 0x0004
+| MOUSE_HWHEELED 0x0008
 
 ::evtmxy | -- x y | mouse position
     'eventBuffer 4 + w@+ 1+ swap w@ 1+ ;
@@ -115,26 +120,6 @@
 
 ::evtm | -- event | mouse event type
     'eventBuffer 16 + d@ ;
-
-| Mouse event flags:
-| MOUSE_MOVED 0x0001
-| DOUBLE_CLICK 0x0002    
-| MOUSE_WHEELED 0x0004
-| MOUSE_HWHEELED 0x0008
-
-::getevt | -- type | wait for any event
-    stdin 'eventBuffer 1 'nr ReadConsoleInput 
-    eventBuffer $ff and
-    4 =? ( .checksize 0 nip ) | Handle resize event
-    ;
-
-::inevt | -- type | check for event (no wait)
-    stdin 'ne GetNumberOfConsoleInputEvents 
-    ne 0? ( ; ) drop
-    stdin 'eventBuffer 1 'nr ReadConsoleInput
-    eventBuffer $ff and
-    4 =? ( .checksize 0 nip ) | Handle resize event
-    ;
 
 |------- Console Mode Management -------
 | Input Modes:
@@ -164,25 +149,26 @@
 
 |------- Cleanup -------
 ::.free | -- | free console
-	stdin $1F7 SetConsoleMode drop 
+	stdin $7 SetConsoleMode drop 
+	stdout $3 SetConsoleMode drop 
 	FlushConsoleInputBuffer
     FreeConsole ;
 
 |------- Initialization -------
-::.term
+::.reterm  | Set console modes for ANSI/VT sequences and window events
+    stdin $298 SetConsoleMode drop | Enable WINDOW_INPUT
+    stdout $7 SetConsoleMode drop ;
+	
+: |:.term
 	AllocConsole 
 	-10 GetStdHandle 'stdin ! | STD_INPUT_HANDLE
     -11 GetStdHandle 'stdout ! | STD_OUTPUT_HANDLE
     -12 GetStdHandle 'stderr ! | STD_ERROR_HANDLE
-
+	stdin $7 SetConsoleMode drop 
+	stdout $3 SetConsoleMode drop 
+	getterminfo getrc 'prevrc ! 
+	.reterm
     | Enable UTF-8 code page (65001)
     65001 SetConsoleOutputCP  | Output UTF-8
     65001 SetConsoleCP | Input UTF-8
-    
-    | Set console modes for ANSI/VT sequences and window events
-    stdin $298 SetConsoleMode drop | Enable WINDOW_INPUT
-    stdout $7 SetConsoleMode drop
-    
-    .getterminfo
-    .getrc 'prevrc ! 
 	;
