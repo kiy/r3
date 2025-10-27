@@ -31,16 +31,16 @@
     dup 32 >> $ffff and over $ffff and - 'cols !
     dup 48 >> $ffff and swap 16 >> $ffff and - 'rows ! ;
 
-|#c1 ( $1b ) "[9999;9999H"
-|#c2 ( $1b ) "[6n"
-|:getterminfo2	| read size terminal with esc sequense
-|	'c1 count type 
-|	'c2 count type
-|	stdin 'eventBuffer 32 'ne 0 ReadConsole
-|	'eventBuffer 2 + 
-|    getnro 'rows ! 1+ | Skip ;
-|    getnro 'cols ! 
-|	drop ;
+#c1 ( $1b ) "[9999;9999H"
+#c2 ( $1b ) "[6n"
+:getterminfo2	| read size terminal with esc sequense
+	'c1 count type 
+	'c2 count type
+	stdin 'eventBuffer 32 'ne 0 ReadConsole
+	'eventBuffer 2 + 
+	getnro 1- 'rows ! 1+ | Skip ;
+	getnro 1- 'cols ! 
+	drop ;
 
 :getrc rows 16 << cols or ;
 
@@ -48,11 +48,13 @@
 #on-resize 0 | callback address
 
 ::.onresize | 'callback --
-    'on-resize ! ;
+    'on-resize ! ; | something the size is wrong at start
 
-:eventsize
-	'eventBuffer 4 + w@+ 'cols ! w@ 'rows ! 
-	getrc prevrc =? ( drop ; ) 'prevrc !
+:sizecalc
+	'eventBuffer 4 + w@+ 1- 'cols ! w@ 1- 'rows ! ;
+	
+:sizeex
+	getrc prevrc =? ( drop ; ) 'prevrc ! 
 	on-resize 0? ( drop ; ) ex ; 
 
 |------- Keyboard Input -------
@@ -82,21 +84,11 @@
     stdin 'eventBuffer 1 'ne ReadConsoleInput
     eventBuffer $ffff and ;
 	
-::inevt | -- type | check for event (no wait)
-	getEvent
-    4 =? ( ( getEvent 2 >? drop ) drop eventsize ; ) | Handle resize event
-	2 >? ( drop inevt ; ) ;
+##evtmx ##evtmy
+##evtmb
+##evtmw
+::evtmxy evtmx evtmy ;
 
-::getevt | -- type | wait for any event
-	( inevt 0? drop 10 ms ) ;
-
-::inkey | -- key | 0 if no key pressed
-	inevt 1 =? ( drop evtkey ; ) drop 0 ;
-	
-::getch | -- key | wait for key
-    ( inkey 0? drop 10 ms ) ;
-	
-|------- Extended Event Handling -------
 | MOUSE_EVENT_RECORD:
 |   COORD dwMousePosition;  | 2
 |   DWORD dwButtonState;    | 6
@@ -109,17 +101,37 @@
 | MOUSE_WHEELED 0x0004
 | MOUSE_HWHEELED 0x0008
 
-::evtmxy | -- x y | mouse position
-    'eventBuffer 4 + w@+ 1+ swap w@ 1+ ;
+:evnmouse
+	0 'evtmw !
+	'eventBuffer 16 + c@ 
+	1 =? ( drop 'eventBuffer 4 + w@+ 1+ 'evtmx !  w@ 1+ 'evtmy ! ; )
+	4 =? ( drop 'eventBuffer 8 + d@ 23 >> 1 or 'evtmw ! ; )
+	drop 'eventBuffer 8 + d@ 'evtmb ! ;
 
-::evtmb | -- buttons | mouse button state
-    'eventBuffer 8 + d@ ;
+:evtsize
+	( 4 =? ( sizecalc ) 
+		getEvent 2 >? drop | collect
+		) drop sizeex ;
 
-::evtmw | -- wheel | mouse wheel delta
-    'eventBuffer 8 + d@ 23 >> 1 or ;
+::inevt | -- type | check for event (no wait)
+	getEvent
+    4 =? ( evtsize ; ) | Handle resize event
+	2 >? ( drop inevt ; ) 
+	2 =? ( evnmouse )
+	;	
 
-::evtm | -- event | mouse event type
-    'eventBuffer 16 + d@ ;
+::getevt | -- type | wait for any event
+	( inevt 0? drop 10 ms ) ;
+
+::inkey | -- key | 0 if no key pressed
+	inevt 1 =? ( drop evtkey ; ) drop 0 ;
+	
+::getch | -- key | wait for key
+    ( inkey 0? drop 10 ms ) ;
+	
+|------- Extended Event Handling -------
+
+
 
 |------- Console Mode Management -------
 | Input Modes:
@@ -164,10 +176,12 @@
 	-10 GetStdHandle 'stdin ! | STD_INPUT_HANDLE
     -11 GetStdHandle 'stdout ! | STD_OUTPUT_HANDLE
     -12 GetStdHandle 'stderr ! | STD_ERROR_HANDLE
-	stdin $7 SetConsoleMode drop 
-	stdout $3 SetConsoleMode drop 
-	getterminfo getrc 'prevrc ! 
+|	stdin $7 SetConsoleMode drop 
+|	stdout $3 SetConsoleMode drop 
+|	getterminfo
 	.reterm
+	getterminfo2
+	getrc 'prevrc ! 
     | Enable UTF-8 code page (65001)
     65001 SetConsoleOutputCP  | Output UTF-8
     65001 SetConsoleCP | Input UTF-8

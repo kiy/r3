@@ -1,4 +1,5 @@
 ^r3/lib/term.r3
+^r3/lib/trace.r3
 ^./utfg.r3
 
 |--- Layout
@@ -57,17 +58,13 @@
 | N=^ S=v E=> O=<
 | - is full minus the number
 ::flxN | lineas --
-	-? ( fh + )
-	flxFill dup fly+! dup neg flh+!	'fh ! ;
+	-? ( fh + ) flxFill dup fly+! dup neg flh+!	'fh ! ;
 ::flxS | lineas --
-	-? ( fh + )
-	flxFill dup neg flh+! fh fy + over - 'fy ! 'fh ! ;
+	-? ( fh + ) flxFill dup neg flh+! fh fy + over - 'fy ! 'fh ! ;
 ::flxE | cols --
-	-? ( fw + )
-	flxFill dup neg flw+! fw fx + over - 'fx ! 'fw ! ;
+	-? ( fw + ) flxFill dup neg flw+! fw fx + over - 'fx ! 'fw ! ;
 ::flxO | cols --
-	-? ( fw + )
-	flxFill dup flx+! dup neg flw+! 'fw ! ;
+	-? ( fw + ) flxFill dup flx+! dup neg flw+! 'fw ! ;
 	
 ::fw% fw 16 *>> ;
 ::fh% fh 16 *>> ;
@@ -86,12 +83,14 @@
 #idh	| hot
 #ida 	| activa
 #idf	| id foco
+#idfh	
 #idfa 
 #wid	| panel now
 #wida	| panel activa
 
 #rflag	| exit|render|change
 ##uikey	| tecla
+|##uimouse | mouse
 
 :tuireset
 	-1 'ida ! -1 'idfa !
@@ -102,15 +101,17 @@
 
 :tucl	rflag $2 nand 'rflag ! ;	| exec action is for every widget
 :tuX!	rflag $2 or 'rflag ! ;	| exec action need (click or enter)
-::tuX?	rflag $2 and ;			| ask for acion
+::tuX?	rflag $2 and ;			| ask for acion (local)
 
-:tuR!	rflag $8 or 'rflag ! ;	| redraw again, some changes
-:tuTAB	rflag $10 or 'rflag ! ;	| no TAB for change focus
+::tuR!	rflag $8 or 'rflag ! ;	| redraw again, some changes
+::tuC!	rflag $1 or 'rflag ! ; | cursor ON
 
+|******************
 ::.tdebug
 	wida idf ida id "id:%d ida:%d idf:%d wida:%d " .print
 	rflag "%d " .print
 	;
+|******************	
 
 | 0 = normal
 | 1 = over (not all sytems)
@@ -119,14 +120,13 @@
 | 4 = active(outside)
 | 5 = out
 | 6 = click
-
 ::tuiw | -- flag
 	1 'id +! tucl
 	ida 
 	-1 =? ( drop | !active
 		evtmxy flin? 0? ( ; ) drop	| out->0
 		evtmb 0? ( drop 1 ; ) drop		| over->1
-		id dup 'ida ! 'idf !
+		id dup 'ida ! 'idfh !
 		2 ; )	| in->2
 	id =? ( drop | =active
 		evtmxy flin? 0? ( drop
@@ -147,55 +147,49 @@
 	drop 2 ; | stay
 	
 ::tui
-	flx
-	idf 
-	-? ( id 'idf ! )
-	id >? ( 0 'idf ! ) 
-	drop
-	-1 'id !
-|	wida wid >? ( 0 'wida ! ) drop
-	0 'wid ! ;
+	idfh 
+	-? ( id nip )
+	id >? ( 0 nip ) 
+	dup 'idf ! 'idfh !
+	-1 'id ! 0 'wid ! 
+	flx ;
 
 |-------------- EVENT
-:Focus>>
-	rflag $10 and? ( drop ; ) drop
-	1 'idf +! tuR! ;
-	
-:Focus<<
-	rflag $10 and? ( drop ; ) drop
-	-1 'idf +! tuR! ;
+:Focus>> 1 'idfh +! tuR! ; |<<trace ; | cambia id y luego wid
+:Focus<< -1 'idfh +! tuR! ;
 	
 :hkey
 	evtkey
 	[esc] =? ( exit ) 
-	[tab] =? ( focus>> ) | cambia id y luego wid
-	[shift+tab] =? ( focus<< ) | cambia id y luego wid
 	'uikey ! ;
 	
-|:hmouse evtmb 1? ( evtmxy .at "." .fwrite ) drop ;
+|:hmouse 
+	|evtmb 1? ( evtmxy .at "." .fwrite ) drop 
+|	evtmw 1? ( dup 32 << 'uimouse ! ) drop
+|	;
 :exvector
-	.hidec tui vecdraw ex ;
+	.cl .hidec tui vecdraw ex ;
 	
 :tuiredraw
 	exvector
 	rflag
-	$8 and? ( 0 'uikey ! .cl exvector ) | redraw
+	$8 and? ( 0 'uikey ! exvector ) | redraw
 	$1 and? ( .restorec .showc )	| with cursor
 	drop
 	.flush ;
 	
 ::onTui | 'vector --
-	dup .onresize
 	'vecdraw !
+	'exvector .onresize
 	tuireset
 	tuiredraw
 	( rflag $4 nand? drop
-		0 'uikey ! 0 'rflag !
+		0 'uikey ! 0 'rflag ! |0 'uimouse !
 		inevt
 		1 =? ( hkey ) |	2 =? ( hmouse )
 		1? ( tuiredraw ) | ?? animation
 		drop
-		10 ms
+		5 ms
 		) drop 
 	tuireset ;
 
@@ -218,11 +212,11 @@
 :y2 fy fh + 1- ;
 :y3 fy 2 - fh + ;
 :y4 fy fh 2/ + ;
-:y5 fy fw + ;
-:y6 fy fw - fh + 1- ;
+:y5 fy fh + ;
+:y6 fy 2 - ;
 #ypl y0 y1 y2 y3 y4 y5 y6 y0
 
-|$44 center
+|$44 center*
 :place | count place -- x y
 	dup $7 and 3 << 'xpl + @ ex
 	swap 4 >> $7 and 3 << 'ypl + @ ex
@@ -239,18 +233,205 @@
 :kbBtn | 'ev "" -- 'ev ""
 	tuif 1 <? ( drop ; ) drop
 	uikey 0? ( drop ; )	
-	[enter] =? ( drop >r dup >r ex r> r> ; )
+	[enter] =? ( tuX! )
+	[tab] =? ( focus>> ) 
+	[shift+tab] =? ( focus<< ) 
 	drop ;
 	
 ::tuBtn | 'ev "" --
+	.reset
 	tuiw 
 	dup .bc
 	drop
 	kbBtn
 	>r fw fh fx fy r> xText
-	drop
-	;
+	tuX? 0? ( 2drop ; ) drop ex ;
 	
+	
+|--------------------------------	
+|---- write line
+#(xwrite) 'lwrite
+
+::xwrite!
+	'(xwrite) ! ;
+	
+::xwrite.reset
+	'lwrite '(xwrite) ! ;
+
+|---- list mem (intern)
+#cntlist #indlist
+	
+:makeindx | 'adr -- 
+	here dup 'indlist ! >a
+	( dup a!+ >>0
+		dup c@ 1? drop ) 2drop
+	a> dup here - 3 >> 'cntlist !
+	'here ! ;
+	
+::uiNindx | n -- str
+	cntlist >=? ( drop "" ; )
+	3 << indlist + @ ;
+	
+|---- CLICK
+:clicklist | 'var h e -- 'var h e
+	evtmy fy -
+	cntlist >=? ( drop ; )
+	pick3 8 + @ + cntlist min 
+	pick3 ! tuX! ;
+
+|---- WHEEL & SCROLL
+:calccs | 'var h -- 'v h size pos
+	cntlist over <=? ( drop 0 -1 ; )
+	pick2 8 + @ | offset
+	pick2 dup * pick2 / 0? ( 1+ ) | 'var alto total offst siz
+	pick3 over -	| 'var alto total offst siz espacio
+	rot *			| 'var alto total siz espacio*off
+	rot pick3 - /	| 'var alto siz espacio*off/total
+	;
+
+#dnbk ( $e2 $96 $92 $1b $5b $42 $1b $5b $44	0 ) | scroll char+dn+left
+
+:cscroll | 'var h --
+	calccs -? ( 2drop ; ) 
+	fx fw + 1-  fy rot + .at
+	1+ 'dnbk .rep ;
+	
+:chwheel | 'v h 
+	cntlist >=? ( ; ) 
+	evtmw 0? ( drop ; )  | 'v h w
+	pick2 8 + dup 		| 'v h w S S
+	@ rot + clamp0 
+	cntlist pick3 - 1- clampmax swap !
+	;
+
+:pageadj | 'var n key -- 'var n key
+	pick2 @+ swap @ | value page
+	over >? ( drop pick3 8 + ! ; ) 
+	pick3 +
+	over <=? ( drop pick2 - 1+ clamp0 pick3 8 + ! ; )
+	2drop ;
+		
+|----- LIST
+| #vlist 0 0 
+
+:focList | 'var h --
+	tuif 0? ( drop ; ) 
+	1 =? ( pageadj )
+	drop
+	chwheel
+	uikey 0? ( drop ; )	
+	[up] =? ( pick2 dup @ 1- clamp0 swap ! tuX! )
+	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! tuX! )
+	[tab] =? ( focus>> ) [shift+tab] =? ( focus<< ) 	
+	drop ;	
+
+:mouList | 'var h --
+	tuiw	| mouse
+	6 =? ( clicklist )
+	drop ;
+
+:ilist | 'var max n  -- 'var max n
+	pick2 8 + @ over +
+	pick3 @ =? ( .rever )
+	uiNindx 
+	fx .col | color?
+	fw swap (xwrite) ex .cr
+	.reset 
+	;
+
+::tuList | 'var list --
+	fx fy .at
+	mark makeindx
+	fh
+	mouList
+	focList
+	0 ( over <? ilist 1+ ) drop
+	cscroll
+	2drop
+	empty ;	
+	
+|----- TREE
+| #vtree 0 0
+
+#lvl	|  $1f:level $20:have_more $80:is_open	
+:getval	| adr c@ ; a
+	$1f and 
+	lvl <=? ( 'lvl ! ; ) 
+	a> 8 - @ dup 				
+	c@ $20 or over c!
+	c@ $80 and? ( drop 'lvl ! ; ) | draw
+	2drop
+	( >>0 dup c@ 1? 
+		$1f and lvl >? drop )
+	drop ;
+	
+:maketree |
+	0 'lvl !
+	here dup 'indlist ! >a
+	( dup a!+ >>0
+		dup c@ 1? 
+		getval
+		) 2drop
+	a> dup here - 3 >> 'cntlist !
+	'here ! ;
+
+:kbclick	
+	pick2 @ 3 << indlist + @ 
+	dup c@ $80 xor swap c! 
+	tuX! tuR! ;
+	
+:chsel | 'var n key delta -- 'var n key
+	pick3 dup @ rot + cntlist 2 - clamp0max swap ! | 'v n k nv
+	pageadj
+	tuX! ;
+		
+:focTree | 'var h --
+	tuif 0? ( drop ; ) 
+	1 =? ( pageadj )
+	drop
+	chwheel
+	uikey 0? ( drop ; )	
+	[up] =? ( -1 chsel )
+	[dn] =? ( 1 chsel )
+	[tab] =? ( focus>> ) [shift+tab] =? ( focus<< ) 
+	[enter] =? ( kbclick ) 
+	[pgdn] =? ( 1 pick3 8 + +! )
+	drop ;	
+	
+:mouTree | 'var h --
+	tuiw	| mouse
+	6 =? ( clicklist kbclick )
+	drop ;
+
+#foldicon "▸" "▾"
+:,iicon | n -- 
+	$20 nand? ( drop 32 ,c ; )
+	7 >> 1 and 2 << 'foldicon + ,s ; 
+	
+:itree | 'var max n  -- 'var max n
+	pick2 8 + @ over +
+	pick3 @ =? ( .rever )
+	uiNindx c@+ 0? ( 2drop ; )
+	fx .col | color
+	mark dup $1f and 2* ,nsp ,iicon ,s ,eol empty
+	fw here (xwrite) ex .cr 
+	.reset ;
+	
+::tuTree | 'var list --
+	fx fy .at
+	mark maketree
+	fh
+	mouTree
+	focTree	| focus
+	0 ( over <? itree 1+ ) drop
+	cscroll
+	2drop
+	empty ;	
+
+|---- text
+::tuText | "" align --
+	xalign >r fw fh fx fy r> xText ;
+
 |--- Edita linea
 #cmax
 ##padi>	| inicio
@@ -295,6 +476,8 @@
 	[back] =? ( kback ) [del] =? ( kdel )
 	[home] =? ( padi> 'pad> ! ) [end] =? ( padf> 'pad> ! )
 	[dn] =? ( focus>> ) [up] =? ( focus<< )
+	[tab] =? ( focus>> ) [shift+tab] =? ( focus<< ) 
+	
 	[enter] =? ( tuX! )
 	drop ;	
 
@@ -312,7 +495,7 @@
 	fx fy swap 
 	pad> padi> - + | !! falta utf
 	swap .at .savec | cursor
-	rflag $1 or 'rflag !		| activate cursor
+	tuC!		| activate cursor
 	;
 	
 ::tuInputLine | 'buff max --
@@ -324,122 +507,9 @@
 	swap lwrite
 	;
 	
-|--------------------------------	
-|----- list mem (intern)
-#cntlist #indlist
-
-:makeindx | 'adr -- 
-	here dup 'indlist ! >a
-	( dup a!+ >>0
-		dup c@ 1? drop ) 2drop
-	a> dup here - 3 >> 'cntlist !
-	'here ! ;
+|--- check
+|--- radio
+|--- combo
+|--- slide
+|--- progress
 	
-::uiNindx | n -- str
-	cntlist >=? ( drop "" ; )
-	3 << indlist + @ ;
-|--------------------------------	
-:clicklist | 'var h -- 'var h
-	pick2 evtmxy nip fy - over 8 + @ + cntlist min swap ! tuX! ;
-	
-|----- LIST
-| #vlist 0 0 
-
-:focList | 'var h --
-	tuif 0? ( drop ; ) drop
-	uikey 0? ( drop ; )	
-	[up] =? ( pick2 dup @ 1- clamp0 swap ! tuX! )
-	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! tuX! )
-	drop ;	
-
-:mouList | 'var h --
-	tuiw	| mouse
-	6 =? ( clicklist )
-	drop ;
-
-:ilist | 'var max n  -- 'var max n
-	pick2 8 + @ over +
-	pick3 @ =? ( .rever )
-	uiNindx 
-	fx .col
-	fw swap xwrite .cr
-	.reset
-	;
-
-::tuList | 'var list --
-	fx fy .at
-	mark makeindx
-	fh
-	mouList
-	focList
-	0 ( over <? ilist 1+ ) drop
-|	cscroll
-	2drop
-	empty ;	
-	
-|----- TREE
-| #vtree 0 0
-
-#lvl	|  $1f:level $20:have_more $80:is_open	
-:getval	| adr c@ ; a
-	$1f and 
-	lvl <=? ( 'lvl ! ; ) 
-	a> 8 - @ dup 				
-	c@ $20 or over c!
-	c@ $80 and? ( drop 'lvl ! ; ) | draw
-	2drop
-	( >>0 dup c@ 1? 
-		$1f and lvl >? drop )
-	drop ;
-	
-:maketree |
-	0 'lvl !
-	here dup 'indlist ! >a
-	( dup a!+ >>0
-		dup c@ 1? 
-		getval
-		) 2drop
-	a> dup here - 3 >> 'cntlist !
-	'here ! ;
-
-:kbclick	
-	pick2 @ 3 << indlist + @ 
-	dup c@ $80 xor swap c! 
-	tuX! tuR! ;
-	
-:focTree | 'var h --
-	tuif 0? ( drop ; ) drop
-	uikey 0? ( drop ; )	
-	[up] =? ( pick2 dup @ 1- clamp0 swap ! tuX! )
-	[dn] =? ( pick2 dup @ 1+ cntlist 1- clampmax swap ! tuX! )
-	[enter] =? ( kbclick ) 
-	drop ;	
-	
-:mouTree | 'var h --
-	tuiw	| mouse
-	6 =? ( clicklist kbclick )
-	drop ;
-
-#foldicon "▸" "▾"
-:,iicon | n -- 
-	$20 nand? ( drop 32 ,c ; )
-	7 >> 1 and 2 << 'foldicon + ,s ; 
-	
-:itree | 'var max n  -- 'var max n
-	pick2 8 + @ over +
-	pick3 @ =? ( .rever )
-	uiNindx c@+ 0? ( 2drop ; )
-	fx .col
-	mark dup $1f and 2* ,nsp ,iicon ,s ,eol empty
-	fw here xwrite .cr .reset ;
-	
-::tuTree | 'var list --
-	fx fy .at
-	mark maketree
-	fh
-	mouTree
-	focTree	| focus
-	0 ( over <? itree 1+ ) drop
-|	cscroll
-	2drop
-	empty ;	

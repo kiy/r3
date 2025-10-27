@@ -82,15 +82,14 @@
 	bufferin ;
 
 |------- Event System (Windows-compatible) -------
-#mouse-y #mouse-x 
+##evtmx ##evtmy
 ##evtmb
 ##evtmw
-
-::evtmxy mouse-x mouse-y ;
+::evtmxy evtmx evtmy ;
 
 |--- mode 1006
 :dnbtn
-	$40 and? ( $1 and 2* 1- 'evtmw ! ; ) 
+	$40 and? ( $1 and 2* 1- neg 'evtmw ! ; ) 
 	$3 and 1 swap <<
 	evtmb or 'evtmb ! ;
 	
@@ -104,8 +103,8 @@
 	0 'evtmw !
 	'bufferin 3 +
     getnro swap 1+ | Skip ;
-    getnro 'mouse-x ! 1+ | Skip ;
-    getnro 'mouse-y ! 
+    getnro 'evtmx ! 1+ | Skip ;
+    getnro 'evtmy ! 
 	c@ | m 6d M 4d
 	$20 nand? ( drop dnbtn ; ) 
 	drop upbtn ;
